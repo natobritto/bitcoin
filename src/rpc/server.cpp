@@ -12,6 +12,7 @@
 #include <logging.h>
 #include <node/context.h>
 #include <node/kernel_notifications.h>
+#include <rpc/schema.h>
 #include <rpc/server_util.h>
 #include <rpc/util.h>
 #include <sync.h>
@@ -66,7 +67,40 @@ struct RPCCommandExecution
     }
 };
 
-std::string CRPCTable::help(std::string_view strCommand, const JSONRPCRequest& helpreq) const
+//std::string CRPCTable::help(std::string_view strCommand, const JSONRPCRequest& helpreq) const
+UniValue CRPCTable::api() const
+{
+    // todo:
+    // - should hidden commands be hidden?
+    // - are there any other commands that should be hidden?
+    // - get rid of cast to RpcMethodFnType
+    //
+    // later:
+    // - examples should be stored in a structured form so they
+    //   can be returned in a structured form
+    // - descriptions should not contain wrapping newlines
+
+    UniValue value(UniValue::VOBJ);
+
+    UniValue commands(UniValue::VOBJ);
+
+    for (const auto& entry: mapCommands) {
+        UniValue aliases(UniValue::VARR);
+
+        for (const auto& command: entry.second) {
+            RPCHelpMan man = ((RpcMethodFnType)command->unique_id)();
+            aliases.push_back(man.ToDescriptionValue(command->category));
+        }
+
+        commands.pushKV(entry.first, aliases);
+    }
+
+    value.pushKV("commands", commands);
+
+    return value;
+}
+
+std::string CRPCTable::help(const std::string& strCommand, const JSONRPCRequest& helpreq) const
 {
     std::string strRet;
     std::string category;
@@ -116,6 +150,34 @@ std::string CRPCTable::help(std::string_view strCommand, const JSONRPCRequest& h
     return strRet;
 }
 
+<<<<<<< HEAD
+static RPCHelpMan api()
+{
+    return RPCHelpMan{"api",
+                "\nReturn JSON description of RPC API.\n",
+                {},
+                {
+                    RPCResult{RPCResult::Type::OBJ, "", "FOO"},
+                },
+                RPCExamples{""},
+        [&](const RPCHelpMan& self, const JSONRPCRequest& jsonRequest) -> UniValue
+{
+    return tableRPC.api();
+},
+    };
+}
+
+UniValue CRPCTable::schema() const
+{
+    return APISchema(this->mapCommands);
+=======
+UniValue CRPCTable::schema() const
+{
+    return CommandSchemas(this->mapCommands);
+>>>>>>> 9d90e50d191330237688eea1a4bd93018b417da2
+}
+
+
 static RPCHelpMan help()
 {
     return RPCHelpMan{
@@ -138,6 +200,38 @@ static RPCHelpMan help()
     }
 
     return tableRPC.help(command.value_or(""), jsonRequest);
+},
+    };
+}
+
+static RPCHelpMan schema()
+{
+    return RPCHelpMan{"schema",
+                "\nReturn RPC command JSON Schema descriptions.\n",
+                {},
+                {
+                    RPCResult{RPCResult::Type::OBJ, "", "FOO"},
+                },
+                RPCExamples{""},
+        [&](const RPCHelpMan& self, const JSONRPCRequest& jsonRequest) -> UniValue
+{
+    return tableRPC.schema();
+},
+    };
+}
+
+static RPCHelpMan schema()
+{
+    return RPCHelpMan{"schema",
+                "\nReturn RPC command JSON Schema descriptions.\n",
+                {},
+                {
+                    RPCResult{RPCResult::Type::OBJ, "", "FOO"},
+                },
+                RPCExamples{""},
+        [&](const RPCHelpMan& self, const JSONRPCRequest& jsonRequest) -> UniValue
+{
+    return tableRPC.schema();
 },
     };
 }
@@ -237,8 +331,10 @@ static RPCHelpMan getrpcinfo()
 
 static const CRPCCommand vRPCCommands[]{
     /* Overall control/query calls */
+    {"control", &api},
     {"control", &getrpcinfo},
     {"control", &help},
+    {"control", &schema},
     {"control", &stop},
     {"control", &uptime},
 };
@@ -255,6 +351,10 @@ void CRPCTable::appendCommand(const std::string& name, const CRPCCommand* pcmd)
     CHECK_NONFATAL(!IsRPCRunning()); // Only add commands before rpc is running
 
     mapCommands[name].push_back(pcmd);
+
+    if (mapCommands[name].size() > 1) {
+        LogWarning("%s%d\n", name, mapCommands[name].size());
+    }
 }
 
 bool CRPCTable::removeCommand(const std::string& name, const CRPCCommand* pcmd)

@@ -89,7 +89,9 @@ private:
     std::map<std::string, std::vector<const CRPCCommand*>> mapCommands;
 public:
     CRPCTable();
-    std::string help(std::string_view name, const JSONRPCRequest& helpreq) const;
+//    std::string help(std::string_view name, const JSONRPCRequest& helpreq) const;
+    std::string help(const std::string& name, const JSONRPCRequest& helpreq) const;
+    UniValue api() const;
 
     /**
      * Execute a method.
@@ -124,6 +126,8 @@ public:
      */
     void appendCommand(const std::string& name, const CRPCCommand* pcmd);
     bool removeCommand(const std::string& name, const CRPCCommand* pcmd);
+
+    UniValue schema() const;
 };
 
 bool IsDeprecatedRPCEnabled(const std::string& method);

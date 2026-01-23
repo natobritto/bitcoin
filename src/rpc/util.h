@@ -12,6 +12,7 @@
 #include <pubkey.h>
 #include <rpc/protocol.h>
 #include <rpc/request.h>
+#include <rpc/schema.h>
 #include <script/script.h>
 #include <script/sign.h>
 #include <uint256.h>
@@ -290,6 +291,8 @@ struct RPCArg {
      * the argument is required.
      */
     std::string ToDescriptionString(bool is_named_arg) const;
+
+    UniValue ToDescriptionValue() const;
 };
 
 // NOLINTNEXTLINE(misc-no-recursion)
@@ -382,6 +385,8 @@ struct RPCResult {
      */
     UniValue MatchesType(const UniValue& result) const;
 
+    UniValue ToDescriptionValue() const;
+
 private:
     void CheckInnerDoc() const;
 };
@@ -403,6 +408,8 @@ struct RPCResults {
      * Return the description string.
      */
     std::string ToDescriptionString() const;
+
+    UniValue ToDescriptionValue() const;
 };
 
 struct RPCExamples {
@@ -413,6 +420,7 @@ struct RPCExamples {
     {
     }
     std::string ToDescriptionString() const;
+    UniValue ToDescriptionValue() const;
 };
 
 class RPCHelpMan
@@ -495,6 +503,9 @@ public:
 
     const std::string m_name;
 
+    UniValue ToDescriptionValue(const std::string& category) const;
+    friend Schema;
+
 private:
     const RPCMethodImpl m_fun;
     const std::string m_description;
@@ -506,6 +517,7 @@ private:
     R ArgValue(size_t i) const;
     //! Return positional index of a parameter using its name as key.
     size_t GetParamIndex(std::string_view key) const;
+    friend Schema;
 };
 
 /**
