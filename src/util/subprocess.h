@@ -738,6 +738,7 @@ private:
   Popen* popen_ = nullptr;
 };
 
+#ifndef __USING_WINDOWS__
 /*!
  * A helper class to Popen.
  * This takes care of all the fork-exec logic
@@ -759,6 +760,7 @@ private:
   Popen* parent_ = nullptr;
   int err_wr_pipe_ = -1;
 };
+#endif
 
 // Fwd Decl.
 class Streams;
@@ -930,7 +932,9 @@ class Popen
 {
 public:
   friend struct detail::ArgumentDeducer;
+#ifndef __USING_WINDOWS__
   friend class detail::Child;
+#endif
 
   template <typename... Args>
   Popen(std::initializer_list<const char*> cmd_args, Args&& ...args)
@@ -1258,8 +1262,8 @@ namespace detail {
   }
 
 
-  inline void Child::execute_child() {
 #ifndef __USING_WINDOWS__
+  inline void Child::execute_child() {
     int sys_ret = -1;
     auto& stream = parent_->stream_;
 
@@ -1319,8 +1323,8 @@ namespace detail {
     // Calling application would not get this
     // exit failure
     _exit (EXIT_FAILURE);
-#endif
   }
+#endif
 
 
   inline void Streams::setup_comm_channels()
