@@ -1,0 +1,15 @@
+{
+  "openrpcDocument": "./OpenRPC.json",
+  "outDir": "./.openrpc-build",
+  "components": [
+    {
+      "type": "custom",
+      "name": "bitcoin-rust-client",
+      "language": "rust",
+      "customComponent": "./generator/rust-component.js",
+      "customType": "client",
+      "outPath": "./rust-bitcoin-cli/src",
+      "openRPCPath": null
+    }
+  ]
+}

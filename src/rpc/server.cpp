@@ -7,6 +7,7 @@
 
 #include <rpc/server.h>
 
+#include <clientversion.h>
 #include <common/args.h>
 #include <common/system.h>
 #include <logging.h>
@@ -65,6 +66,45 @@ struct RPCCommandExecution
     }
 };
 
+UniValue CRPCTable::api() const
+{
+    // TODO: decide whether hidden commands should be omitted.
+    // TODO: get rid of cast to RpcMethodFnType.
+
+    UniValue spec(UniValue::VOBJ);
+    spec.pushKV("openrpc", "1.2.6");
+
+    UniValue info(UniValue::VOBJ);
+    info.pushKV("title", std::string(CLIENT_NAME) + " RPC");
+    info.pushKV("version", FormatFullVersion());
+    spec.pushKV("info", info);
+
+    UniValue methods(UniValue::VARR);
+
+    for (const auto& entry : mapCommands) {
+        if (entry.second.empty()) continue;
+        const CRPCCommand* primary = entry.second.front();
+        RPCHelpMan man = ((RpcMethodFnType)primary->unique_id)();
+        UniValue method = man.ToOpenRPCValue(primary->category);
+
+        if (entry.second.size() > 1) {
+            UniValue variants(UniValue::VARR);
+            for (size_t i = 1; i < entry.second.size(); ++i) {
+                const CRPCCommand* variant_cmd = entry.second[i];
+                RPCHelpMan variant = ((RpcMethodFnType)variant_cmd->unique_id)();
+                variants.push_back(variant.ToOpenRPCValue(variant_cmd->category));
+            }
+            method.pushKV("x-bitcoin-variants", variants);
+        }
+
+        methods.push_back(method);
+    }
+
+    spec.pushKV("methods", methods);
+
+    return spec;
+}
+
 std::string CRPCTable::help(const std::string& strCommand, const JSONRPCRequest& helpreq) const
 {
     std::string strRet;
@@ -113,6 +153,22 @@ std::string CRPCTable::help(const std::string& strCommand, const JSONRPCRequest&
         strRet = strprintf("help: unknown command: %s\n", strCommand);
     strRet = strRet.substr(0,strRet.size()-1);
     return strRet;
+}
+
+static RPCHelpMan api()
+{
+    return RPCHelpMan{"api",
+                "\nReturn an OpenRPC document describing the RPC API.\n",
+                {},
+                {
+                    RPCResult{RPCResult::Type::OBJ, "", "OpenRPC document"},
+                },
+                RPCExamples{""},
+        [&](const RPCHelpMan& self, const JSONRPCRequest& jsonRequest) -> UniValue
+{
+    return tableRPC.api();
+},
+    };
 }
 
 static RPCHelpMan help()
@@ -239,6 +295,7 @@ static RPCHelpMan getrpcinfo()
 
 static const CRPCCommand vRPCCommands[]{
     /* Overall control/query calls */
+    {"control", &api},
     {"control", &getrpcinfo},
     {"control", &help},
     {"control", &stop},
@@ -257,6 +314,10 @@ void CRPCTable::appendCommand(const std::string& name, const CRPCCommand* pcmd)
     CHECK_NONFATAL(!IsRPCRunning()); // Only add commands before rpc is running
 
     mapCommands[name].push_back(pcmd);
+
+    if (mapCommands[name].size() > 1) {
+        LogWarning("%s%d\n", name, mapCommands[name].size());
+    }
 }
 
 bool CRPCTable::removeCommand(const std::string& name, const CRPCCommand* pcmd)
