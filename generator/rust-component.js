@@ -13,18 +13,170 @@ const RUST_KEYWORDS = new Set([
   "while", "async", "await", "dyn",
 ]);
 
+<<<<<<< HEAD
 function toSnake(name) {
+=======
+const EXTRA_WORDS = [
+  "add", "address", "addr", "all", "block", "blocks", "chain", "client",
+  "create", "decode", "descriptor", "dump", "encode", "estimate", "fee",
+  "feerate", "get", "hash", "height", "import", "info", "key", "keys",
+  "list", "load", "lock", "mempool", "min", "max", "network", "node",
+  "peer", "psbt", "raw", "receive", "remove", "rescan", "scan", "send",
+  "set", "sign", "submit", "sync", "tx", "txid", "utxo", "verify", "wallet",
+];
+
+let NAME_INFO = null;
+
+function setNameInfo(info) {
+  NAME_INFO = info;
+}
+
+function getNameInfo() {
+  return NAME_INFO || { renameMap: new Map(), wordSet: new Set(EXTRA_WORDS) };
+}
+
+function walkDir(dir, visitor) {
+  const entries = fs.readdirSync(dir, { withFileTypes: true });
+  for (const entry of entries) {
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      walkDir(full, visitor);
+    } else if (entry.isFile()) {
+      visitor(full);
+    }
+  }
+}
+
+function addTokens(name, wordSet) {
+  if (!name) return;
+  const clean = name.startsWith("r#") ? name.slice(2) : name;
+  const parts = clean.split("_").filter(Boolean);
+  if (parts.length === 0) {
+    wordSet.add(clean.toLowerCase());
+    return;
+  }
+  for (const part of parts) {
+    wordSet.add(part.toLowerCase());
+  }
+}
+
+function buildNameInfo(root) {
+  const renameMap = new Map();
+  const wordSet = new Set(EXTRA_WORDS);
+
+  const typesDir = path.join(root, "corepc", "types", "src");
+  if (fs.existsSync(typesDir)) {
+    walkDir(typesDir, (file) => {
+      if (!file.endsWith(".rs")) return;
+      const content = fs.readFileSync(file, "utf8");
+      const renameRe = /#\[serde\(rename = "([^"]+)"\)\]\s*(?:#\[[^\]]+\]\s*)*pub\s+([A-Za-z0-9_]+)\s*:/g;
+      for (const match of content.matchAll(renameRe)) {
+        renameMap.set(match[1], match[2]);
+        addTokens(match[2], wordSet);
+      }
+      const fieldRe = /\bpub\s+([A-Za-z0-9_]+)\s*:/g;
+      for (const match of content.matchAll(fieldRe)) {
+        addTokens(match[1], wordSet);
+      }
+    });
+  }
+
+  const clientDir = path.join(root, "corepc", "client", "src");
+  if (fs.existsSync(clientDir)) {
+    walkDir(clientDir, (file) => {
+      if (!file.endsWith(".rs")) return;
+      const content = fs.readFileSync(file, "utf8");
+      const fnRe = /\bpub\s+fn\s+([A-Za-z0-9_]+)\s*\(/g;
+      for (const match of content.matchAll(fnRe)) {
+        addTokens(match[1], wordSet);
+      }
+    });
+  }
+
+  return { renameMap, wordSet };
+}
+
+function splitLowercase(name, wordSet) {
+  if (!wordSet || wordSet.size === 0) return null;
+  const n = name.length;
+  const best = Array(n + 1).fill(null);
+  best[0] = { count: 0, tokens: [] };
+
+  for (let i = 0; i < n; i += 1) {
+    if (!best[i]) continue;
+    for (let j = i + 1; j <= n; j += 1) {
+      const token = name.slice(i, j);
+      if (!wordSet.has(token)) continue;
+      const candidate = best[i].tokens.concat(token);
+      const count = candidate.length;
+      if (!best[j] || count < best[j].count) {
+        best[j] = { count, tokens: candidate };
+      }
+    }
+  }
+
+  return best[n] ? best[n].tokens : null;
+}
+
+function normalizeSnake(out) {
+  const parts = out.split("_").filter(Boolean);
+  const merged = [];
+  for (let i = 0; i < parts.length; i += 1) {
+    const part = parts[i];
+    const next = parts[i + 1];
+    if (part === "pub" && (next === "key" || next === "keys")) {
+      merged.push(`pub${next}`);
+      i += 1;
+      continue;
+    }
+    if (part === "tx" && (next === "id" || next === "ids")) {
+      merged.push(`tx${next}`);
+      i += 1;
+      continue;
+    }
+    if (part === "wtx" && (next === "id" || next === "ids")) {
+      merged.push(`wtx${next}`);
+      i += 1;
+      continue;
+    }
+    merged.push(part);
+  }
+  return merged.join("_");
+}
+
+function toSnake(name) {
+  const { renameMap, wordSet } = getNameInfo();
+  if (renameMap && renameMap.has(name)) return renameMap.get(name);
+
+>>>>>>> 7c5b579b01 (add codegen)
   let out = name.replace(/[^0-9a-zA-Z]+/g, "_");
   out = out.replace(/([a-z0-9])([A-Z])/g, "$1_$2");
   out = out.replace(/^_+|_+$/g, "").toLowerCase();
   if (!out) out = "field";
+<<<<<<< HEAD
+=======
+
+  if (!out.includes("_")) {
+    const tokens = splitLowercase(out, wordSet);
+    if (tokens && tokens.length > 1) {
+      out = tokens.join("_");
+    }
+  }
+
+  out = normalizeSnake(out);
+>>>>>>> 7c5b579b01 (add codegen)
   if (/^[0-9]/.test(out)) out = `_${out}`;
   if (RUST_KEYWORDS.has(out)) out = `${out}_`;
   return out;
 }
 
 function toCamel(name) {
+<<<<<<< HEAD
   const parts = name.split(/[^0-9a-zA-Z]+/g).filter(Boolean);
+=======
+  const snake = toSnake(name);
+  const parts = snake.split("_").filter(Boolean);
+>>>>>>> 7c5b579b01 (add codegen)
   let out = parts.map((p) => p[0].toUpperCase() + p.slice(1)).join("");
   if (!out) out = "Type";
   if (/^[0-9]/.test(out)) out = `T${out}`;
@@ -49,6 +201,10 @@ class TypeEmitter {
     this.lines = [];
     this.usedNames = new Set();
     this.needRange = false;
+<<<<<<< HEAD
+=======
+    this.needBTreeMap = false;
+>>>>>>> 7c5b579b01 (add codegen)
   }
 
   unique(base) {
@@ -63,13 +219,22 @@ class TypeEmitter {
   }
 
   emitStruct(name, fields, extraField) {
+<<<<<<< HEAD
     this.lines.push("#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]");
+=======
+    this.lines.push("#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]");
+    this.lines.push("#[cfg_attr(feature = \"serde-deny-unknown-fields\", serde(deny_unknown_fields))]");
+>>>>>>> 7c5b579b01 (add codegen)
     this.lines.push(`pub struct ${name} {`);
     for (const field of fields) {
       if (field.doc) this.lines.push(...docLines(field.doc, "    "));
       if (field.rename) this.lines.push(`    #[serde(rename = \"${field.rename}\")]`);
       if (field.optional) {
+<<<<<<< HEAD
         this.lines.push("    #[serde(default, skip_serializing_if = \"Option::is_none\")]" );
+=======
+        this.lines.push("    #[serde(default, skip_serializing_if = \"Option::is_none\")]");
+>>>>>>> 7c5b579b01 (add codegen)
         this.lines.push(`    pub ${field.name}: ${makeOptional(field.type)},`);
       } else {
         this.lines.push(`    pub ${field.name}: ${field.type},`);
@@ -85,7 +250,11 @@ class TypeEmitter {
   }
 
   emitEnum(name, variants) {
+<<<<<<< HEAD
     this.lines.push("#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]");
+=======
+    this.lines.push("#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]");
+>>>>>>> 7c5b579b01 (add codegen)
     this.lines.push("#[serde(untagged)]");
     this.lines.push(`pub enum ${name} {`);
     for (const variant of variants) {
@@ -134,7 +303,11 @@ function resolveSchemaInner(schema, nameHint, emitter) {
   if (!schema) return "Value";
 
   const btcType = schema["x-bitcoin-type"];
+<<<<<<< HEAD
   if (btcType === "amount") return "rust_decimal::Decimal";
+=======
+  if (btcType === "amount") return "f64";
+>>>>>>> 7c5b579b01 (add codegen)
   if (btcType === "hex") return "String";
   if (btcType === "range") {
     emitter.needRange = true;
@@ -173,20 +346,50 @@ function resolveSchemaInner(schema, nameHint, emitter) {
     if (propNames.length === 0) {
       if (schema.additionalProperties) {
         const addl = schema.additionalProperties;
+<<<<<<< HEAD
         if (addl === true) return "std::collections::BTreeMap<String, Value>";
         const valueType = resolveSchema(addl, `${nameHint}Value`, emitter);
         return `std::collections::BTreeMap<String, ${valueType}>`;
+=======
+        emitter.needBTreeMap = true;
+        if (addl === true) return "BTreeMap<String, Value>";
+        const valueType = resolveSchema(addl, `${nameHint}Value`, emitter);
+        return `BTreeMap<String, ${valueType}>`;
+>>>>>>> 7c5b579b01 (add codegen)
       }
       return "Value";
     }
 
     const structName = emitter.unique(toCamel(nameHint));
     const fields = [];
+<<<<<<< HEAD
     for (const propName of propNames) {
       const propSchema = props[propName] || {};
       const fieldName = toSnake(propName);
       const fieldType = resolveSchema(propSchema, `${structName}${toCamel(propName)}`, emitter);
       const optional = !required.has(propName) || propSchema["x-bitcoin-optional"] === true;
+=======
+    const usedFieldNames = new Set();
+    for (const propName of propNames) {
+      const propSchema = props[propName] || {};
+      let fieldName = toSnake(propName);
+      if (usedFieldNames.has(fieldName)) {
+        if (propName === "feeRate" && fieldName === "fee_rate") {
+          fieldName = "fee_rate_btc_kvb";
+        } else {
+          let suffix = 2;
+          let candidate = `${fieldName}_${suffix}`;
+          while (usedFieldNames.has(candidate)) {
+            suffix += 1;
+            candidate = `${fieldName}_${suffix}`;
+          }
+          fieldName = candidate;
+        }
+      }
+      const fieldType = resolveSchema(propSchema, `${structName}${toCamel(propName)}`, emitter);
+      const optional = !required.has(propName) || propSchema["x-bitcoin-optional"] === true;
+      usedFieldNames.add(fieldName);
+>>>>>>> 7c5b579b01 (add codegen)
       fields.push({
         name: fieldName,
         type: fieldType,
@@ -200,10 +403,18 @@ function resolveSchemaInner(schema, nameHint, emitter) {
     if (schema.additionalProperties) {
       const addl = schema.additionalProperties;
       const fieldName = propNames.includes("extra") ? "extra_fields" : "extra";
+<<<<<<< HEAD
       let fieldType = "std::collections::BTreeMap<String, Value>";
       if (addl !== true) {
         const valueType = resolveSchema(addl, `${structName}ExtraValue`, emitter);
         fieldType = `std::collections::BTreeMap<String, ${valueType}>`;
+=======
+      emitter.needBTreeMap = true;
+      let fieldType = "BTreeMap<String, Value>";
+      if (addl !== true) {
+        const valueType = resolveSchema(addl, `${structName}ExtraValue`, emitter);
+        fieldType = `BTreeMap<String, ${valueType}>`;
+>>>>>>> 7c5b579b01 (add codegen)
       }
       extraField = {
         name: fieldName,
@@ -254,6 +465,11 @@ function buildParams(params) {
 function generateBindings(document, options) {
   const emitter = new TypeEmitter();
   const methods = [];
+<<<<<<< HEAD
+=======
+  const root = path.resolve(__dirname, "..");
+  setNameInfo(buildNameInfo(root));
+>>>>>>> 7c5b579b01 (add codegen)
 
   for (const method of document.methods || []) {
     const methodName = toSnake(method.name);
@@ -269,7 +485,11 @@ function generateBindings(document, options) {
     const resultSchema = method.result ? method.result.schema : null;
     let resultType = "()";
     if (resultSchema) {
+<<<<<<< HEAD
       resultType = resolveSchema(resultSchema, `${toCamel(method.name)}Result`, emitter);
+=======
+      resultType = resolveSchema(resultSchema, `${toCamel(method.name)}`, emitter);
+>>>>>>> 7c5b579b01 (add codegen)
     }
 
     const methodLines = [];
@@ -291,6 +511,7 @@ function generateBindings(document, options) {
   lines.push("");
   lines.push("pub mod types {");
   lines.push("    use serde::{Deserialize, Serialize};");
+<<<<<<< HEAD
   lines.push("    pub use serde_json::Value;");
   lines.push("");
   if (emitter.needRange) {
@@ -299,6 +520,19 @@ function generateBindings(document, options) {
     lines.push("    pub enum RangeParam {");
     lines.push("        Single(u64),");
     lines.push("        Range([u64; 2]),");
+=======
+  if (emitter.needBTreeMap) {
+    lines.push("    use std::collections::BTreeMap;");
+  }
+  lines.push("    pub use serde_json::Value;");
+  lines.push("");
+  if (emitter.needRange) {
+    lines.push("    #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]");
+    lines.push("    #[serde(untagged)]");
+    lines.push("    pub enum RangeParam {");
+      lines.push("        Single(u64),");
+      lines.push("        Range([u64; 2]),");
+>>>>>>> 7c5b579b01 (add codegen)
     lines.push("    }");
     lines.push("");
   }
@@ -308,6 +542,12 @@ function generateBindings(document, options) {
   lines.push("}");
   lines.push("");
   lines.push("use self::types::*;");
+<<<<<<< HEAD
+=======
+  if (emitter.needBTreeMap) {
+    lines.push("use std::collections::BTreeMap;");
+  }
+>>>>>>> 7c5b579b01 (add codegen)
   lines.push("");
   lines.push("impl crate::RpcClient {");
   lines.push(...methods);
@@ -334,7 +574,10 @@ function renderCargoToml(config) {
   lines.push("serde = { version = \"1\", features = [\"derive\"] }");
   lines.push("serde_json = \"1\"");
   lines.push("thiserror = \"1\"");
+<<<<<<< HEAD
   lines.push("rust_decimal = { version = \"1\", features = [\"serde\"] }");
+=======
+>>>>>>> 7c5b579b01 (add codegen)
   lines.push("");
   return lines.join("\n") + "\n";
 }
@@ -474,7 +717,11 @@ async function generate(...args) {
   const resolvedDoc = document || loadDocument(openrpcPath);
   if (!resolvedDoc) throw new Error("OpenRPC document not found.");
 
+<<<<<<< HEAD
   const outputRoot = path.join(root, "rust-bitcoin-cli");
+=======
+  const outputRoot = path.join(root, ".");
+>>>>>>> 7c5b579b01 (add codegen)
   const generatedFile = path.join(outputRoot, "src", "generated.rs");
 
   const contents = generateBindings(resolvedDoc, {});
@@ -520,7 +767,11 @@ const staticPath = () => undefined;
 if (require.main === module) {
   generate()
     .then(() => {
+<<<<<<< HEAD
       console.log("Generated rust-bitcoin-cli/src/generated.rs from OpenRPC.json");
+=======
+      console.log("Generated ./src/generated.rs from OpenRPC.json");
+>>>>>>> 7c5b579b01 (add codegen)
     })
     .catch((err) => {
       console.error(err);

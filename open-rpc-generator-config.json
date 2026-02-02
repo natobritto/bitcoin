@@ -8,7 +8,7 @@
       "language": "rust",
       "customComponent": "./generator/rust-component.js",
       "customType": "client",
-      "outPath": "./rust-bitcoin-cli/src",
+      "outPath": "./generator/src",
       "openRPCPath": null
     }
   ]
