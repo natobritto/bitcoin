@@ -269,6 +269,8 @@ struct RPCArg {
      * the argument is required.
      */
     std::string ToDescriptionString(bool is_named_arg) const;
+
+    UniValue ToDescriptionValue() const;
 };
 
 struct RPCResult {
@@ -360,6 +362,8 @@ struct RPCResult {
      */
     UniValue MatchesType(const UniValue& result) const;
 
+    UniValue ToDescriptionValue() const;
+
 private:
     void CheckInnerDoc() const;
 };
@@ -381,6 +385,8 @@ struct RPCResults {
      * Return the description string.
      */
     std::string ToDescriptionString() const;
+
+    UniValue ToDescriptionValue() const;
 };
 
 struct RPCExamples {
@@ -391,6 +397,7 @@ struct RPCExamples {
     {
     }
     std::string ToDescriptionString() const;
+    UniValue ToDescriptionValue() const;
 };
 
 class RPCHelpMan
@@ -448,6 +455,9 @@ public:
     std::vector<std::pair<std::string, bool>> GetArgNames() const;
 
     const std::string m_name;
+
+    UniValue ToDescriptionValue(const std::string& category) const;
+    UniValue ToOpenRPCValue(const std::string& category) const;
 
 private:
     const RPCMethodImpl m_fun;
