@@ -149,3 +149,8 @@ dist/
 /guix-build-*
 
 /ci/scratch/
+
+build
+build-ninja
+regtest-data
+
