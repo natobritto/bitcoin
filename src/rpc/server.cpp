@@ -5,6 +5,8 @@
 
 #include <rpc/server.h>
 
+#include <clientversion.h>
+#include <logging.h>
 #include <rpc/util.h>
 #include <shutdown.h>
 #include <sync.h>
@@ -15,6 +17,7 @@
 
 #include <boost/signals2/signal.hpp>
 
+#include <algorithm>
 #include <cassert>
 #include <chrono>
 #include <memory>
@@ -32,22 +35,19 @@ static GlobalMutex g_deadline_timers_mutex;
 static std::map<std::string, std::unique_ptr<RPCTimerBase> > deadlineTimers GUARDED_BY(g_deadline_timers_mutex);
 static bool ExecuteCommand(const CRPCCommand& command, const JSONRPCRequest& request, UniValue& result, bool last_handler);
 
-struct RPCCommandExecutionInfo
-{
+struct RPCCommandExecutionInfo {
     std::string method;
     SteadyClock::time_point start;
 };
 
-struct RPCServerInfo
-{
+struct RPCServerInfo {
     Mutex mutex;
     std::list<RPCCommandExecutionInfo> active_commands GUARDED_BY(mutex);
 };
 
 static RPCServerInfo g_rpc_server_info;
 
-struct RPCCommandExecution
-{
+struct RPCCommandExecution {
     std::list<RPCCommandExecutionInfo>::iterator it;
     explicit RPCCommandExecution(const std::string& method)
     {
@@ -77,16 +77,55 @@ void RPCServer::OnStopped(std::function<void ()> slot)
     g_rpcSignals.Stopped.connect(slot);
 }
 
+UniValue CRPCTable::getopenrpc() const
+{
+    UniValue spec(UniValue::VOBJ);
+    spec.pushKV("openrpc", "1.2.6");
+
+    UniValue info(UniValue::VOBJ);
+    info.pushKV("title", std::string(CLIENT_NAME) + " RPC");
+    info.pushKV("version", FormatFullVersion());
+
+    spec.pushKV("info", info);
+
+    UniValue methods(UniValue::VARR);
+
+    for (const auto& entry : mapCommands) {
+        if (entry.second.empty()) continue;
+        const CRPCCommand* primary = entry.second.front();
+        RPCHelpMan man = ((RpcMethodFnType)primary->unique_id)();
+        UniValue method = man.ToOpenRPCValue(primary->category);
+
+        if (entry.second.size() > 1) {
+            UniValue variants(UniValue::VARR);
+            for (size_t i = 1; i < entry.second.size(); ++i) {
+                const CRPCCommand* variant_cmd = entry.second[i];
+                RPCHelpMan variant = ((RpcMethodFnType)variant_cmd->unique_id)();
+                variants.push_back(variant.ToOpenRPCValue(variant_cmd->category));
+            }
+            method.pushKV("x-bitcoin-variants", variants);
+        }
+
+        methods.push_back(method);
+    }
+
+    spec.pushKV("methods", methods);
+
+    return spec;
+}
+
+// std::string CRPCTable::help(std::string_view strCommand, const JSONRPCRequest& helpreq) const
 std::string CRPCTable::help(const std::string& strCommand, const JSONRPCRequest& helpreq) const
 {
     std::string strRet;
     std::string category;
     std::set<intptr_t> setDone;
-    std::vector<std::pair<std::string, const CRPCCommand*> > vCommands;
+    std::vector<std::pair<std::string, const CRPCCommand*>> vCommands;
+    vCommands.reserve(mapCommands.size());
 
     for (const auto& entry : mapCommands)
         vCommands.push_back(make_pair(entry.second.front()->category + entry.first, entry.second.front()));
-    sort(vCommands.begin(), vCommands.end());
+    std::sort(vCommands.begin(), vCommands.end());
 
     JSONRPCRequest jreq = helpreq;
     jreq.mode = JSONRPCRequest::GET_HELP;
@@ -99,8 +138,7 @@ std::string CRPCTable::help(const std::string& strCommand, const JSONRPCRequest&
         if ((strCommand != "" || pcmd->category == "hidden") && strMethod != strCommand)
             continue;
         jreq.strMethod = strMethod;
-        try
-        {
+        try {
             UniValue unused_result;
             if (setDone.insert(pcmd->unique_id).second)
                 pcmd->actor(jreq, unused_result, true /* last_handler */);
@@ -114,8 +152,7 @@ std::string CRPCTable::help(const std::string& strCommand, const JSONRPCRequest&
                 if (strHelp.find('\n') != std::string::npos)
                     strHelp = strHelp.substr(0, strHelp.find('\n'));
 
-                if (category != pcmd->category)
-                {
+                if (category != pcmd->category) {
                     if (!category.empty())
                         strRet += "\n";
                     category = pcmd->category;
@@ -127,8 +164,24 @@ std::string CRPCTable::help(const std::string& strCommand, const JSONRPCRequest&
     }
     if (strRet == "")
         strRet = strprintf("help: unknown command: %s\n", strCommand);
-    strRet = strRet.substr(0,strRet.size()-1);
+    strRet = strRet.substr(0, strRet.size() - 1);
     return strRet;
+}
+
+static RPCHelpMan getopenrpc()
+{
+    return RPCHelpMan{
+        "getopenrpc",
+        "\nReturn an OpenRPC document describing the RPC API.\n",
+        {},
+        {
+            RPCResult{RPCResult::Type::OBJ, "", "OpenRPC document"},
+        },
+        RPCExamples{""},
+        [&](const RPCHelpMan& self, const JSONRPCRequest& jsonRequest) -> UniValue {
+            return tableRPC.getopenrpc();
+        },
+    };
 }
 
 static RPCHelpMan help()
@@ -244,13 +297,14 @@ static RPCHelpMan getrpcinfo()
     UniValue log_path(UniValue::VSTR, path);
     result.pushKV("logpath", log_path);
 
-    return result;
-}
-    };
+
+            return result;
+        }};
 }
 
 static const CRPCCommand vRPCCommands[]{
     /* Overall control/query calls */
+    {"control", &getopenrpc},
     {"control", &getrpcinfo},
     {"control", &help},
     {"control", &stop},
@@ -269,6 +323,10 @@ void CRPCTable::appendCommand(const std::string& name, const CRPCCommand* pcmd)
     CHECK_NONFATAL(!IsRPCRunning()); // Only add commands before rpc is running
 
     mapCommands[name].push_back(pcmd);
+
+    if (mapCommands[name].size() > 1) {
+        LogPrint(BCLog::RPC, "Duplicate RPC command %s (%zu entries)\n", name, mapCommands[name].size());
+    }
 }
 
 bool CRPCTable::removeCommand(const std::string& name, const CRPCCommand* pcmd)
@@ -338,7 +396,7 @@ void SetRPCWarmupFinished()
     fRPCInWarmup = false;
 }
 
-bool RPCIsInWarmup(std::string *outStatus)
+bool RPCIsInWarmup(std::string* outStatus)
 {
     LOCK(g_rpc_warmup_mutex);
     if (outStatus)
@@ -398,15 +456,18 @@ static inline JSONRPCRequest transformNamedArguments(const JSONRPCRequest& in, c
     const std::vector<std::string>& keys = in.params.getKeys();
     const std::vector<UniValue>& values = in.params.getValues();
     std::unordered_map<std::string, const UniValue*> argsIn;
-    for (size_t i=0; i<keys.size(); ++i) {
-        argsIn[keys[i]] = &values[i];
+    for (size_t i = 0; i < keys.size(); ++i) {
+        auto [_, inserted] = argsIn.emplace(keys[i], &values[i]);
+        if (!inserted) {
+            throw JSONRPCError(RPC_INVALID_PARAMETER, "Parameter " + keys[i] + " specified multiple times");
+        }
     }
     // Process expected parameters.
     int hole = 0;
     for (const std::string &argNamePattern: argNames) {
         std::vector<std::string> vargNames = SplitString(argNamePattern, '|');
         auto fr = argsIn.end();
-        for (const std::string & argName : vargNames) {
+        for (const std::string& argName : vargNames) {
             fr = argsIn.find(argName);
             if (fr != argsIn.end()) {
                 break;
@@ -444,7 +505,7 @@ static bool ExecuteCommands(const std::vector<const CRPCCommand*>& commands, con
     return false;
 }
 
-UniValue CRPCTable::execute(const JSONRPCRequest &request) const
+UniValue CRPCTable::execute(const JSONRPCRequest& request) const
 {
     // Return immediately if in warmup
     {
@@ -485,7 +546,9 @@ static bool ExecuteCommand(const CRPCCommand& command, const JSONRPCRequest& req
 std::vector<std::string> CRPCTable::listCommands() const
 {
     std::vector<std::string> commandList;
-    for (const auto& i : mapCommands) commandList.emplace_back(i.first);
+    commandList.reserve(mapCommands.size());
+    for (const auto& i : mapCommands)
+        commandList.emplace_back(i.first);
     return commandList;
 }
 
