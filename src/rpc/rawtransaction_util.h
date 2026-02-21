@@ -7,9 +7,13 @@
 
 #include <addresstype.h>
 #include <consensus/amount.h>
+#include <rpc/util.h>
+
+#include <cstdint>
 #include <map>
-#include <string>
 #include <optional>
+#include <string>
+#include <vector>
 
 struct bilingual_str;
 struct FlatSigningProvider;
@@ -54,5 +58,11 @@ void AddOutputs(CMutableTransaction& rawTx, const UniValue& outputs_in);
 
 /** Create a transaction from univalue parameters */
 CMutableTransaction ConstructTransaction(const UniValue& inputs_in, const UniValue& outputs_in, const UniValue& locktime, std::optional<bool> rbf, const uint32_t version);
+
+/** Explain the inner fields of a vin item in the decoded transaction **/
+std::vector<RPCResult> DecodeTxVinItemDoc();
+
+/** Explain the UniValue "decoded" transaction object, may include extra fields if processed by wallet **/
+std::vector<RPCResult> DecodeTxDoc(const std::string& txid_field_doc, bool wallet);
 
 #endif // BITCOIN_RPC_RAWTRANSACTION_UTIL_H
