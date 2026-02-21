@@ -6,13 +6,12 @@ setup:
   just build
 
 configure:
-  if [ ! -f "{{build_dir}}/build.ninja" ]; then \
-    cmake -S . -B "{{build_dir}}" -G Ninja \
-      -DBUILD_DAEMON=ON \
-      -DBUILD_CLI=ON \
-      -DBUILD_TESTS=ON \
-      -DENABLE_WALLET=ON; \
-  fi
+  cmake -S . -B "{{build_dir}}" -G Ninja \
+    -DBUILD_DAEMON=ON \
+    -DBUILD_CLI=ON \
+    -DBUILD_TESTS=OFF \
+    -DENABLE_WALLET=OFF \
+    -DENABLE_IPC=OFF
 
 build: configure
   cmake --build "{{build_dir}}" -j "$(nproc)" --target bitcoind bitcoin-cli
