@@ -248,28 +248,22 @@ static RPCHelpMan getrawtransaction()
                              {RPCResult::Type::NUM, "time", /*optional=*/true, "Same as \"blocktime\""},
                              {RPCResult::Type::STR_HEX, "hex", "The serialized, hex-encoded data for 'txid'"},
                          },
-                         DecodeTxDoc(/*txid_field_doc=*/"The transaction id (same as provided)", /*wallet=*/false)),
+                         TxDoc("The transaction id (same as provided)")),
+
                     },
-                    RPCResult{"for verbosity = 2",
-                        RPCResult::Type::OBJ, "", "",
+                    RPCResult{"for verbosity = 2", RPCResult::Type::OBJ, "", "",
+                    Cat(
                         {
-                            {RPCResult::Type::ELISION, "", "Same output as verbosity = 1"},
+                            {RPCResult::Type::BOOL, "in_active_chain", /*optional=*/true, "Whether specified block is in the active chain or not (only present with explicit \"blockhash\" argument)"},
+                            {RPCResult::Type::STR_HEX, "blockhash", /*optional=*/true, "the block hash"},
+                            {RPCResult::Type::NUM, "confirmations", /*optional=*/true, "The confirmations"},
+                            {RPCResult::Type::NUM_TIME, "blocktime", /*optional=*/true, "The block time expressed in " + UNIX_EPOCH_TIME},
+                            {RPCResult::Type::NUM, "time", /*optional=*/true, "Same as \"blocktime\""},
+                            {RPCResult::Type::STR_HEX, "hex", "The serialized, hex-encoded data for 'txid'"},
                             {RPCResult::Type::NUM, "fee", /*optional=*/true, "transaction fee in " + CURRENCY_UNIT + ", omitted if block undo data is not available"},
-                            {RPCResult::Type::ARR, "vin", "",
-                            {
-                                {RPCResult::Type::OBJ, "", "utxo being spent",
-                                {
-                                    {RPCResult::Type::ELISION, "", "Same output as verbosity = 1"},
-                                    {RPCResult::Type::OBJ, "prevout", /*optional=*/true, "The previous output, omitted if block undo data is not available",
-                                    {
-                                        {RPCResult::Type::BOOL, "generated", "Coinbase or not"},
-                                        {RPCResult::Type::NUM, "height", "The height of the prevout"},
-                                        {RPCResult::Type::STR_AMOUNT, "value", "The value in " + CURRENCY_UNIT},
-                                        {RPCResult::Type::OBJ, "scriptPubKey", "", ScriptPubKeyDoc()},
-                                    }},
-                                }},
-                            }},
-                        }},
+                        },
+                        TxDoc("The transaction id (same as provided)", TxDocOptions{.prevout = true})
+                    )},
                 },
                 RPCExamples{
                     HelpExampleCli("getrawtransaction", "\"mytxid\"")
@@ -422,7 +416,7 @@ static RPCHelpMan decoderawtransaction()
                 },
                 RPCResult{
                     RPCResult::Type::OBJ, "", "",
-                    DecodeTxDoc(/*txid_field_doc=*/"The transaction id", /*wallet=*/false),
+                    TxDoc("The transaction id"),
                 },
                 RPCExamples{
                     HelpExampleCli("decoderawtransaction", "\"hexstring\"")
@@ -781,9 +775,8 @@ const RPCResult decodepsbt_inputs{
         {RPCResult::Type::OBJ, "", "",
         {
             {RPCResult::Type::OBJ, "non_witness_utxo", /*optional=*/true, "Decoded network transaction for non-witness UTXOs",
-            {
-                {RPCResult::Type::ELISION, "",""},
-            }},
+                TxDoc("The transaction id")
+            },
             {RPCResult::Type::OBJ, "witness_utxo", /*optional=*/true, "Transaction output for witness UTXOs",
             {
                 {RPCResult::Type::NUM, "amount", "The value in " + CURRENCY_UNIT},
@@ -1023,9 +1016,8 @@ static RPCHelpMan decodepsbt()
                     RPCResult::Type::OBJ, "", "",
                     {
                         {RPCResult::Type::OBJ, "tx", "The decoded network-serialized unsigned transaction.",
-                        {
-                            {RPCResult::Type::ELISION, "", "The layout is the same as the output of decoderawtransaction."},
-                        }},
+                            TxDoc("The transaction id")
+                        },
                         {RPCResult::Type::ARR, "global_xpubs", "",
                         {
                             {RPCResult::Type::OBJ, "", "",
