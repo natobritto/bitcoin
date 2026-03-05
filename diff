@@ -1,0 +1,616 @@
+diff --git a/src/rpc/blockchain.cpp b/src/rpc/blockchain.cpp
+index 475c5ca41c..5971ce095d 100644
+--- a/src/rpc/blockchain.cpp
++++ b/src/rpc/blockchain.cpp
+@@ -734,29 +734,42 @@ static CBlockUndo GetUndoChecked(BlockManager& blockman, const CBlockIndex& bloc
+     return blockUndo;
+ }
+
+-const RPCResult getblock_vin{
+-    RPCResult::Type::ARR, "vin", "",
+-    {
+-        {RPCResult::Type::OBJ, "", "",
++
++
++static std::vector<RPCResult> GetBlockFields(RPCResult tx_result)
++{
++    auto fields = std::vector<RPCResult>{
++        {RPCResult::Type::STR_HEX, "hash", "the block hash (same as provided)"},
++        {RPCResult::Type::NUM, "confirmations", "The number of confirmations, or -1 if the block is not on the main chain"},
++        {RPCResult::Type::NUM, "size", "The block size"},
++        {RPCResult::Type::NUM, "strippedsize", "The block size excluding witness data"},
++        {RPCResult::Type::NUM, "weight", "The block weight as defined in BIP 141"},
++        {RPCResult::Type::OBJ, "coinbase_tx", "Coinbase transaction metadata",
+         {
+-            {RPCResult::Type::ELISION, "", "The same output as verbosity = 2"},
+-            {RPCResult::Type::OBJ, "prevout", "(Only if undo information is available)",
+-            {
+-                {RPCResult::Type::BOOL, "generated", "Coinbase or not"},
+-                {RPCResult::Type::NUM, "height", "The height of the prevout"},
+-                {RPCResult::Type::STR_AMOUNT, "value", "The value in " + CURRENCY_UNIT},
+-                {RPCResult::Type::OBJ, "scriptPubKey", "",
+-                {
+-                    {RPCResult::Type::STR, "asm", "Disassembly of the output script"},
+-                    {RPCResult::Type::STR, "desc", "Inferred descriptor for the output"},
+-                    {RPCResult::Type::STR_HEX, "hex", "The raw output script bytes, hex-encoded"},
+-                    {RPCResult::Type::STR, "address", /*optional=*/true, "The Bitcoin address (only if a well-defined address exists)"},
+-                    {RPCResult::Type::STR, "type", "The type (one of: " + GetAllOutputTypes() + ")"},
+-                }},
+-            }},
++            {RPCResult::Type::NUM, "version", "The coinbase transaction version"},
++            {RPCResult::Type::NUM, "locktime", "The coinbase transaction's locktime (nLockTime)"},
++            {RPCResult::Type::NUM, "sequence", "The coinbase input's sequence number (nSequence)"},
++            {RPCResult::Type::STR_HEX, "coinbase", "The coinbase input's script"},
++            {RPCResult::Type::STR_HEX, "witness", /*optional=*/true, "The coinbase input's first (and only) witness stack element, if present"},
+         }},
+-    }
+-};
++        {RPCResult::Type::NUM, "height", "The block height or index"},
++        {RPCResult::Type::NUM, "version", "The block version"},
++        {RPCResult::Type::STR_HEX, "versionHex", "The block version formatted in hexadecimal"},
++        {RPCResult::Type::STR_HEX, "merkleroot", "The merkle root"},
++    };
++    fields.push_back(std::move(tx_result));
++    fields.push_back({RPCResult::Type::NUM_TIME, "time",       "The block time expressed in " + UNIX_EPOCH_TIME});
++    fields.push_back({RPCResult::Type::NUM_TIME, "mediantime", "The median block time expressed in " + UNIX_EPOCH_TIME});
++    fields.push_back({RPCResult::Type::NUM, "nonce", "The nonce"});
++    fields.push_back({RPCResult::Type::STR_HEX, "bits", "nBits: compact representation of the block difficulty target"});
++    fields.push_back({RPCResult::Type::STR_HEX, "target", "The difficulty target"});
++    fields.push_back({RPCResult::Type::NUM, "difficulty", "The difficulty"});
++    fields.push_back({RPCResult::Type::STR_HEX, "chainwork", "Expected number of hashes required to produce the chain up to this block (in hex)"});
++    fields.push_back({RPCResult::Type::NUM, "nTx", "The number of transactions in the block"});
++    fields.push_back({RPCResult::Type::STR_HEX, "previousblockhash", /*optional=*/true, "The hash of the previous block (if available)"});
++    fields.push_back({RPCResult::Type::STR_HEX, "nextblockhash", /*optional=*/true, "The hash of the next block (if available)"});
++    return fields;
++}
+
+ static RPCHelpMan getblock()
+ {
+@@ -772,67 +785,24 @@ static RPCHelpMan getblock()
+                      RPCArgOptions{.skip_type_check = true}},
+                 },
+                 {
+-                    RPCResult{"for verbosity = 0",
+-                RPCResult::Type::STR_HEX, "", "A string that is serialized, hex-encoded data for block 'hash'"},
+-                    RPCResult{"for verbosity = 1",
+-                RPCResult::Type::OBJ, "", "",
+-                {
+-                    {RPCResult::Type::STR_HEX, "hash", "the block hash (same as provided)"},
+-                    {RPCResult::Type::NUM, "confirmations", "The number of confirmations, or -1 if the block is not on the main chain"},
+-                    {RPCResult::Type::NUM, "size", "The block size"},
+-                    {RPCResult::Type::NUM, "strippedsize", "The block size excluding witness data"},
+-                    {RPCResult::Type::NUM, "weight", "The block weight as defined in BIP 141"},
+-                    {RPCResult::Type::OBJ, "coinbase_tx", "Coinbase transaction metadata",
+-                    {
+-                        {RPCResult::Type::NUM, "version", "The coinbase transaction version"},
+-                        {RPCResult::Type::NUM, "locktime", "The coinbase transaction's locktime (nLockTime)"},
+-                        {RPCResult::Type::NUM, "sequence", "The coinbase input's sequence number (nSequence)"},
+-                        {RPCResult::Type::STR_HEX, "coinbase", "The coinbase input's script"},
+-                        {RPCResult::Type::STR_HEX, "witness", /*optional=*/true, "The coinbase input's first (and only) witness stack element, if present"},
+-                    }},
+-                    {RPCResult::Type::NUM, "height", "The block height or index"},
+-                    {RPCResult::Type::NUM, "version", "The block version"},
+-                    {RPCResult::Type::STR_HEX, "versionHex", "The block version formatted in hexadecimal"},
+-                    {RPCResult::Type::STR_HEX, "merkleroot", "The merkle root"},
+-                    {RPCResult::Type::ARR, "tx", "The transaction ids",
+-                        {{RPCResult::Type::STR_HEX, "", "The transaction id"}}},
+-                    {RPCResult::Type::NUM_TIME, "time",       "The block time expressed in " + UNIX_EPOCH_TIME},
+-                    {RPCResult::Type::NUM_TIME, "mediantime", "The median block time expressed in " + UNIX_EPOCH_TIME},
+-                    {RPCResult::Type::NUM, "nonce", "The nonce"},
+-                    {RPCResult::Type::STR_HEX, "bits", "nBits: compact representation of the block difficulty target"},
+-                    {RPCResult::Type::STR_HEX, "target", "The difficulty target"},
+-                    {RPCResult::Type::NUM, "difficulty", "The difficulty"},
+-                    {RPCResult::Type::STR_HEX, "chainwork", "Expected number of hashes required to produce the chain up to this block (in hex)"},
+-                    {RPCResult::Type::NUM, "nTx", "The number of transactions in the block"},
+-                    {RPCResult::Type::STR_HEX, "previousblockhash", /*optional=*/true, "The hash of the previous block (if available)"},
+-                    {RPCResult::Type::STR_HEX, "nextblockhash", /*optional=*/true, "The hash of the next block (if available)"},
+-                }},
+-                    RPCResult{"for verbosity = 2",
+-                RPCResult::Type::OBJ, "", "",
+-                {
+-                    {RPCResult::Type::ELISION, "", "Same output as verbosity = 1"},
+-                    {RPCResult::Type::ARR, "tx", "",
+-                    {
+-                        {RPCResult::Type::OBJ, "", "",
++                    RPCResult{"for verbosity = 0", RPCResult::Type::STR_HEX, "", "A string that is serialized, hex-encoded data for block 'hash'"},
++                    RPCResult{"for verbosity = 1", RPCResult::Type::OBJ, "", "",
++                        GetBlockFields({RPCResult::Type::ARR, "tx", "The transaction ids",
++                            {{RPCResult::Type::STR_HEX, "", "The transaction id"}}})},
++                    RPCResult{"for verbosity = 2", RPCResult::Type::OBJ, "", "",
++                        GetBlockFields({RPCResult::Type::ARR, "tx", "",
+                         {
+-                            {RPCResult::Type::ELISION, "", "The transactions in the format of the getrawtransaction RPC. Different from verbosity = 1 \"tx\" result"},
+-                            {RPCResult::Type::NUM, "fee", "The transaction fee in " + CURRENCY_UNIT + ", omitted if block undo data is not available"},
+-                        }},
+-                    }},
+-                }},
+-                    RPCResult{"for verbosity = 3",
+-                RPCResult::Type::OBJ, "", "",
+-                {
+-                    {RPCResult::Type::ELISION, "", "Same output as verbosity = 2"},
+-                    {RPCResult::Type::ARR, "tx", "",
+-                    {
+-                        {RPCResult::Type::OBJ, "", "",
++                            {RPCResult::Type::OBJ, "", "",
++                                TxDoc("The transaction id", TxDocOptions{.fee = true, .hex = true})},
++
++                        }})},
++                    RPCResult{"for verbosity = 3", RPCResult::Type::OBJ, "", "",
++                        GetBlockFields({RPCResult::Type::ARR, "tx", "",
+                         {
+-                            getblock_vin,
+-                        }},
+-                    }},
+-                }},
+-        },
++                            {RPCResult::Type::OBJ, "", "",
++                                TxDoc("The transaction id", TxDocOptions{.prevout = true, .fee = true, .hex = true})},
++                        }})},
++                },
+                 RPCExamples{
+                     HelpExampleCli("getblock", "\"00000000c937983704a73af28acdec37b049d214adbda81d7e2a3dd146f6ed09\"")
+             + HelpExampleRpc("getblock", "\"00000000c937983704a73af28acdec37b049d214adbda81d7e2a3dd146f6ed09\"")
+diff --git a/src/rpc/rawtransaction.cpp b/src/rpc/rawtransaction.cpp
+index 5885422be7..3d554ce0eb 100644
+--- a/src/rpc/rawtransaction.cpp
++++ b/src/rpc/rawtransaction.cpp
+@@ -248,28 +248,22 @@ static RPCHelpMan getrawtransaction()
+                              {RPCResult::Type::NUM, "time", /*optional=*/true, "Same as \"blocktime\""},
+                              {RPCResult::Type::STR_HEX, "hex", "The serialized, hex-encoded data for 'txid'"},
+                          },
+-                         DecodeTxDoc(/*txid_field_doc=*/"The transaction id (same as provided)", /*wallet=*/false)),
++                         TxDoc("The transaction id (same as provided)")),
++
+                     },
+-                    RPCResult{"for verbosity = 2",
+-                        RPCResult::Type::OBJ, "", "",
++                    RPCResult{"for verbosity = 2", RPCResult::Type::OBJ, "", "",
++                    Cat(
+                         {
+-                            {RPCResult::Type::ELISION, "", "Same output as verbosity = 1"},
++                            {RPCResult::Type::BOOL, "in_active_chain", /*optional=*/true, "Whether specified block is in the active chain or not (only present with explicit \"blockhash\" argument)"},
++                            {RPCResult::Type::STR_HEX, "blockhash", /*optional=*/true, "the block hash"},
++                            {RPCResult::Type::NUM, "confirmations", /*optional=*/true, "The confirmations"},
++                            {RPCResult::Type::NUM_TIME, "blocktime", /*optional=*/true, "The block time expressed in " + UNIX_EPOCH_TIME},
++                            {RPCResult::Type::NUM, "time", /*optional=*/true, "Same as \"blocktime\""},
++                            {RPCResult::Type::STR_HEX, "hex", "The serialized, hex-encoded data for 'txid'"},
+                             {RPCResult::Type::NUM, "fee", /*optional=*/true, "transaction fee in " + CURRENCY_UNIT + ", omitted if block undo data is not available"},
+-                            {RPCResult::Type::ARR, "vin", "",
+-                            {
+-                                {RPCResult::Type::OBJ, "", "utxo being spent",
+-                                {
+-                                    {RPCResult::Type::ELISION, "", "Same output as verbosity = 1"},
+-                                    {RPCResult::Type::OBJ, "prevout", /*optional=*/true, "The previous output, omitted if block undo data is not available",
+-                                    {
+-                                        {RPCResult::Type::BOOL, "generated", "Coinbase or not"},
+-                                        {RPCResult::Type::NUM, "height", "The height of the prevout"},
+-                                        {RPCResult::Type::STR_AMOUNT, "value", "The value in " + CURRENCY_UNIT},
+-                                        {RPCResult::Type::OBJ, "scriptPubKey", "", ScriptPubKeyDoc()},
+-                                    }},
+-                                }},
+-                            }},
+-                        }},
++                        },
++                        TxDoc("The transaction id (same as provided)", TxDocOptions{.prevout = true})
++                    )},
+                 },
+                 RPCExamples{
+                     HelpExampleCli("getrawtransaction", "\"mytxid\"")
+@@ -422,7 +416,7 @@ static RPCHelpMan decoderawtransaction()
+                 },
+                 RPCResult{
+                     RPCResult::Type::OBJ, "", "",
+-                    DecodeTxDoc(/*txid_field_doc=*/"The transaction id", /*wallet=*/false),
++                    TxDoc("The transaction id"),
+                 },
+                 RPCExamples{
+                     HelpExampleCli("decoderawtransaction", "\"hexstring\"")
+@@ -781,9 +775,8 @@ const RPCResult decodepsbt_inputs{
+         {RPCResult::Type::OBJ, "", "",
+         {
+             {RPCResult::Type::OBJ, "non_witness_utxo", /*optional=*/true, "Decoded network transaction for non-witness UTXOs",
+-            {
+-                {RPCResult::Type::ELISION, "",""},
+-            }},
++                TxDoc("The transaction id")
++            },
+             {RPCResult::Type::OBJ, "witness_utxo", /*optional=*/true, "Transaction output for witness UTXOs",
+             {
+                 {RPCResult::Type::NUM, "amount", "The value in " + CURRENCY_UNIT},
+@@ -1023,9 +1016,8 @@ static RPCHelpMan decodepsbt()
+                     RPCResult::Type::OBJ, "", "",
+                     {
+                         {RPCResult::Type::OBJ, "tx", "The decoded network-serialized unsigned transaction.",
+-                        {
+-                            {RPCResult::Type::ELISION, "", "The layout is the same as the output of decoderawtransaction."},
+-                        }},
++                            TxDoc("The transaction id")
++                        },
+                         {RPCResult::Type::ARR, "global_xpubs", "",
+                         {
+                             {RPCResult::Type::OBJ, "", "",
+diff --git a/src/rpc/rawtransaction_util.cpp b/src/rpc/rawtransaction_util.cpp
+index 467289fc14..fca5147e8b 100644
+--- a/src/rpc/rawtransaction_util.cpp
++++ b/src/rpc/rawtransaction_util.cpp
+@@ -343,49 +343,3 @@ void SignTransactionResultToJSON(CMutableTransaction& mtx, bool complete, const
+         result.pushKV("errors", std::move(vErrors));
+     }
+ }
+-
+-std::vector<RPCResult> DecodeTxDoc(const std::string& txid_field_doc, bool wallet)
+-{
+-    return {
+-        {RPCResult::Type::STR_HEX, "txid", txid_field_doc},
+-        {RPCResult::Type::STR_HEX, "hash", "The transaction hash (differs from txid for witness transactions)"},
+-        {RPCResult::Type::NUM, "size", "The serialized transaction size"},
+-        {RPCResult::Type::NUM, "vsize", "The virtual transaction size (differs from size for witness transactions)"},
+-        {RPCResult::Type::NUM, "weight", "The transaction's weight (between vsize*4-3 and vsize*4)"},
+-        {RPCResult::Type::NUM, "version", "The version"},
+-        {RPCResult::Type::NUM_TIME, "locktime", "The lock time"},
+-        {RPCResult::Type::ARR, "vin", "",
+-        {
+-            {RPCResult::Type::OBJ, "", "",
+-            {
+-                {RPCResult::Type::STR_HEX, "coinbase", /*optional=*/true, "The coinbase value (only if coinbase transaction)"},
+-                {RPCResult::Type::STR_HEX, "txid", /*optional=*/true, "The transaction id (if not coinbase transaction)"},
+-                {RPCResult::Type::NUM, "vout", /*optional=*/true, "The output number (if not coinbase transaction)"},
+-                {RPCResult::Type::OBJ, "scriptSig", /*optional=*/true, "The script (if not coinbase transaction)",
+-                {
+-                    {RPCResult::Type::STR, "asm", "Disassembly of the signature script"},
+-                    {RPCResult::Type::STR_HEX, "hex", "The raw signature script bytes, hex-encoded"},
+-                }},
+-                {RPCResult::Type::ARR, "txinwitness", /*optional=*/true, "",
+-                {
+-                    {RPCResult::Type::STR_HEX, "hex", "hex-encoded witness data (if any)"},
+-                }},
+-                {RPCResult::Type::NUM, "sequence", "The script sequence number"},
+-            }},
+-        }},
+-        {RPCResult::Type::ARR, "vout", "",
+-        {
+-            {RPCResult::Type::OBJ, "", "", Cat(
+-                {
+-                    {RPCResult::Type::STR_AMOUNT, "value", "The value in " + CURRENCY_UNIT},
+-                    {RPCResult::Type::NUM, "n", "index"},
+-                    {RPCResult::Type::OBJ, "scriptPubKey", "", ScriptPubKeyDoc()},
+-                },
+-                    wallet ?
+-                    std::vector<RPCResult>{{RPCResult::Type::BOOL, "ischange", /*optional=*/true, "Output script is change (only present if true)"}} :
+-                    std::vector<RPCResult>{}
+-                )
+-            },
+-        }},
+-    };
+-}
+diff --git a/src/rpc/rawtransaction_util.h b/src/rpc/rawtransaction_util.h
+index 7bd051220a..0a02959271 100644
+--- a/src/rpc/rawtransaction_util.h
++++ b/src/rpc/rawtransaction_util.h
+@@ -56,7 +56,4 @@ void AddOutputs(CMutableTransaction& rawTx, const UniValue& outputs_in);
+ /** Create a transaction from univalue parameters */
+ CMutableTransaction ConstructTransaction(const UniValue& inputs_in, const UniValue& outputs_in, const UniValue& locktime, std::optional<bool> rbf, uint32_t version);
+
+-/** Explain the UniValue "decoded" transaction object, may include extra fields if processed by wallet **/
+-std::vector<RPCResult> DecodeTxDoc(const std::string& txid_field_doc, bool wallet);
+-
+ #endif // BITCOIN_RPC_RAWTRANSACTION_UTIL_H
+diff --git a/src/rpc/util.cpp b/src/rpc/util.cpp
+index 49569c7be5..7b053f2310 100644
+--- a/src/rpc/util.cpp
++++ b/src/rpc/util.cpp
+@@ -1403,3 +1403,68 @@ uint256 GetTarget(const CBlockIndex& blockindex, const uint256 pow_limit)
+     arith_uint256 target{*CHECK_NONFATAL(DeriveTarget(blockindex.nBits, pow_limit))};
+     return ArithToUint256(target);
+ }
++
++std::vector<RPCResult> TxDoc(const std::string& txid_field_doc, TxDocOptions opts)
++{
++    std::vector<RPCResult> vin_item{
++        {RPCResult::Type::STR_HEX, "coinbase", /*optional=*/true, "The coinbase value (only if coinbase transaction)"},
++        {RPCResult::Type::STR_HEX, "txid", /*optional=*/true, "The transaction id (if not coinbase transaction)"},
++        {RPCResult::Type::NUM, "vout", /*optional=*/true, "The output number (if not coinbase transaction)"},
++        {RPCResult::Type::OBJ, "scriptSig", /*optional=*/true, "The script (if not coinbase transaction)",
++        {
++            {RPCResult::Type::STR, "asm", "Disassembly of the signature script"},
++            {RPCResult::Type::STR_HEX, "hex", "The raw signature script bytes, hex-encoded"},
++        }},
++        {RPCResult::Type::ARR, "txinwitness", /*optional=*/true, "",
++        {
++            {RPCResult::Type::STR_HEX, "hex", "hex-encoded witness data (if any)"},
++        }}
++    };
++    if (opts.prevout) {
++        vin_item.push_back({RPCResult::Type::OBJ, "prevout", /*optional=*/true, "The previous output, omitted if block undo data is not available",
++            {
++                {RPCResult::Type::BOOL, "generated", "Coinbase or not"},
++                {RPCResult::Type::NUM, "height", "The height of the prevout"},
++                {RPCResult::Type::STR_AMOUNT, "value", "The value in " + CURRENCY_UNIT},
++                {RPCResult::Type::OBJ, "scriptPubKey", "", ScriptPubKeyDoc()},
++            }});
++    }
++    vin_item.push_back({RPCResult::Type::NUM, "sequence", "The script sequence number"});
++
++    std::vector<RPCResult> vout_item = std::vector<RPCResult>{
++        {RPCResult::Type::STR_AMOUNT, "value", "The value in " + CURRENCY_UNIT},
++        {RPCResult::Type::NUM, "n", "index"},
++        {RPCResult::Type::OBJ, "scriptPubKey", "", ScriptPubKeyDoc()}
++    };
++    if (opts.wallet) {
++        vout_item.push_back({RPCResult::Type::BOOL, "ischange", /*optional=*/true, "Output script is change (only present if true)"});
++    }
++
++    std::vector<RPCResult> tx{
++        {RPCResult::Type::STR_HEX, "txid", txid_field_doc},
++        {RPCResult::Type::STR_HEX, "hash", "The transaction hash (differs from txid for witness transactions)"},
++        {RPCResult::Type::NUM, "size", "The serialized transaction size"},
++        {RPCResult::Type::NUM, "vsize", "The virtual transaction size (differs from size for witness transactions)"},
++        {RPCResult::Type::NUM, "weight", "The transaction's weight (between vsize*4-3 and vsize*4)"},
++        {RPCResult::Type::NUM, "version", "The version"},
++        {RPCResult::Type::NUM_TIME, "locktime", "The lock time"},
++        {RPCResult::Type::ARR, "vin", "",
++        {
++            {RPCResult::Type::OBJ, "", "", vin_item},
++        }},
++        {RPCResult::Type::ARR, "vout", "",
++        {
++            {RPCResult::Type::OBJ, "", "", vout_item},
++        }}
++    };
++
++    if (opts.fee) {
++        tx.push_back({RPCResult::Type::NUM, "fee", "transaction fee in " + CURRENCY_UNIT + ", omitted if block undo data is not available"});
++    }
++
++    if (opts.hex) {
++        tx.push_back({RPCResult::Type::STR_HEX, "hex", "The hex-encoded transaction data"});
++    }
++
++    return tx;
++}
+diff --git a/src/rpc/util.h b/src/rpc/util.h
+index 37530876d7..62d2cf2416 100644
+--- a/src/rpc/util.h
++++ b/src/rpc/util.h
+@@ -529,4 +529,27 @@ std::vector<RPCResult> ScriptPubKeyDoc();
+  */
+ uint256 GetTarget(const CBlockIndex& blockindex, uint256 pow_limit);
+
++/** Options controlling which optional fields TxDoc() includes. All fields
++ * default to false so callers only need to name the ones they enable:
++ *
++ *   TxDoc("The transaction id", TxDocOptions{.prevout = true, .fee = true})
++ */
++struct TxDocOptions {
++    bool wallet{false};  //!< Include wallet-related fields (e.g. ischange on outputs)
++    bool prevout{false}; //!< Include previous-output information on inputs
++    bool fee{false};     //!< Include fee field
++    bool hex{false};     //!< Include hex-encoded transaction data
++};
++
++/***
++ * Build a vector of RPCResult entries describing a decoded transaction object.
++ * Optional sections are controlled by @p opts.
++ *
++ * @param[in] txid_field_doc  Documentation string for the txid field
++ * @param[in] opts            Selects which optional fields to include
++ *
++ * @return A vector of RPCResult describing the decoded transaction object
++ */
++std::vector<RPCResult> TxDoc(const std::string& txid_field_doc, TxDocOptions opts = {});
++
+ #endif // BITCOIN_RPC_UTIL_H
+diff --git a/src/wallet/rpc/addresses.cpp b/src/wallet/rpc/addresses.cpp
+index a04e0903b9..0c14a44c09 100644
+--- a/src/wallet/rpc/addresses.cpp
++++ b/src/wallet/rpc/addresses.cpp
+@@ -11,6 +11,7 @@
+ #include <script/solver.h>
+ #include <util/bip32.h>
+ #include <util/translation.h>
++#include <util/vector.h>
+ #include <wallet/receive.h>
+ #include <wallet/rpc/util.h>
+ #include <wallet/wallet.h>
+@@ -365,6 +366,30 @@ static UniValue DescribeWalletAddress(const CWallet& wallet, const CTxDestinatio
+     return ret;
+ }
+
++static std::vector<RPCResult> InnerAddressInfoDoc()
++{
++    return {
++        {RPCResult::Type::BOOL, "solvable", "If we know how to spend coins sent to this address, ignoring the possible lack of private keys."},
++        {RPCResult::Type::STR, "desc", /*optional=*/true, "A descriptor for spending coins sent to this address (only when solvable)."},
++        {RPCResult::Type::STR, "parent_desc", /*optional=*/true, "The descriptor used to derive this address if this is a descriptor wallet"},
++        {RPCResult::Type::BOOL, "isscript", /*optional=*/true, "If the key is a script."},
++        {RPCResult::Type::BOOL, "ischange", "If the address was used for change output."},
++        {RPCResult::Type::BOOL, "iswitness", "If the address is a witness address."},
++        {RPCResult::Type::NUM, "witness_version", /*optional=*/true, "The version number of the witness program."},
++        {RPCResult::Type::STR_HEX, "witness_program", /*optional=*/true, "The hex value of the witness program."},
++        {RPCResult::Type::STR, "script", /*optional=*/true, "The output script type. Only if isscript is true and the redeemscript is known. Possible\n"
++                                                             "types: nonstandard, pubkey, pubkeyhash, scripthash, multisig, nulldata, witness_v0_keyhash,\n"
++            "witness_v0_scripthash, witness_unknown."},
++        {RPCResult::Type::STR_HEX, "hex", /*optional=*/true, "The redeemscript for the p2sh address."},
++        {RPCResult::Type::ARR, "pubkeys", /*optional=*/true, "Array of pubkeys associated with the known redeemscript (only if script is multisig).",
++        {
++            {RPCResult::Type::STR, "pubkey", ""},
++        }},
++        {RPCResult::Type::NUM, "sigsrequired", /*optional=*/true, "The number of signatures required to spend multisig output (only if script is multisig)."},
++        {RPCResult::Type::STR_HEX, "pubkey", /*optional=*/true, "The hex value of the raw public key for single-key addresses (possibly embedded in P2SH or P2WSH)."},
++    };
++}
++
+ RPCHelpMan getaddressinfo()
+ {
+     return RPCHelpMan{
+@@ -376,45 +401,48 @@ RPCHelpMan getaddressinfo()
+                 },
+                 RPCResult{
+                     RPCResult::Type::OBJ, "", "",
+-                    {
+-                        {RPCResult::Type::STR, "address", "The bitcoin address validated."},
+-                        {RPCResult::Type::STR_HEX, "scriptPubKey", "The hex-encoded output script generated by the address."},
+-                        {RPCResult::Type::BOOL, "ismine", "If the address is yours."},
+-                        {RPCResult::Type::BOOL, "iswatchonly", "(DEPRECATED) Always false."},
+-                        {RPCResult::Type::BOOL, "solvable", "If we know how to spend coins sent to this address, ignoring the possible lack of private keys."},
+-                        {RPCResult::Type::STR, "desc", /*optional=*/true, "A descriptor for spending coins sent to this address (only when solvable)."},
+-                        {RPCResult::Type::STR, "parent_desc", /*optional=*/true, "The descriptor used to derive this address if this is a descriptor wallet"},
+-                        {RPCResult::Type::BOOL, "isscript", /*optional=*/true, "If the key is a script."},
+-                        {RPCResult::Type::BOOL, "ischange", "If the address was used for change output."},
+-                        {RPCResult::Type::BOOL, "iswitness", "If the address is a witness address."},
+-                        {RPCResult::Type::NUM, "witness_version", /*optional=*/true, "The version number of the witness program."},
+-                        {RPCResult::Type::STR_HEX, "witness_program", /*optional=*/true, "The hex value of the witness program."},
+-                        {RPCResult::Type::STR, "script", /*optional=*/true, "The output script type. Only if isscript is true and the redeemscript is known. Possible\n"
+-                                                                     "types: nonstandard, pubkey, pubkeyhash, scripthash, multisig, nulldata, witness_v0_keyhash,\n"
+-                            "witness_v0_scripthash, witness_unknown."},
+-                        {RPCResult::Type::STR_HEX, "hex", /*optional=*/true, "The redeemscript for the p2sh address."},
+-                        {RPCResult::Type::ARR, "pubkeys", /*optional=*/true, "Array of pubkeys associated with the known redeemscript (only if script is multisig).",
+-                        {
+-                            {RPCResult::Type::STR, "pubkey", ""},
+-                        }},
+-                        {RPCResult::Type::NUM, "sigsrequired", /*optional=*/true, "The number of signatures required to spend multisig output (only if script is multisig)."},
+-                        {RPCResult::Type::STR_HEX, "pubkey", /*optional=*/true, "The hex value of the raw public key for single-key addresses (possibly embedded in P2SH or P2WSH)."},
+-                        {RPCResult::Type::OBJ, "embedded", /*optional=*/true, "Information about the address embedded in P2SH or P2WSH, if relevant and known.",
+-                        {
+-                            {RPCResult::Type::ELISION, "", "Includes all getaddressinfo output fields for the embedded address, excluding metadata (timestamp, hdkeypath, hdseedid)\n"
+-                            "and relation to the wallet (ismine)."},
+-                        }},
+-                        {RPCResult::Type::BOOL, "iscompressed", /*optional=*/true, "If the pubkey is compressed."},
+-                        {RPCResult::Type::NUM_TIME, "timestamp", /*optional=*/true, "The creation time of the key, if available, expressed in " + UNIX_EPOCH_TIME + "."},
+-                        {RPCResult::Type::STR, "hdkeypath", /*optional=*/true, "The HD keypath, if the key is HD and available."},
+-                        {RPCResult::Type::STR_HEX, "hdseedid", /*optional=*/true, "The Hash160 of the HD seed."},
+-                        {RPCResult::Type::STR_HEX, "hdmasterfingerprint", /*optional=*/true, "The fingerprint of the master key."},
+-                        {RPCResult::Type::ARR, "labels", "Array of labels associated with the address. Currently limited to one label but returned\n"
+-                            "as an array to keep the API stable if multiple labels are enabled in the future.",
+-                        {
+-                            {RPCResult::Type::STR, "label name", "Label name (defaults to \"\")."},
+-                        }},
+-                    }
++                    Cat(
++                        Cat(
++                            std::vector<RPCResult>{
++                                {RPCResult::Type::STR, "address", "The bitcoin address validated."},
++                                {RPCResult::Type::STR_HEX, "scriptPubKey", "The hex-encoded output script generated by the address."},
++                                {RPCResult::Type::BOOL, "ismine", "If the address is yours."},
++                                {RPCResult::Type::BOOL, "iswatchonly", "(DEPRECATED) Always false."},
++                            },
++                            InnerAddressInfoDoc()
++                        ),
++                        std::vector<RPCResult>{
++                            {RPCResult::Type::OBJ, "embedded", /*optional=*/true, "Information about the address embedded in P2SH or P2WSH, if relevant and known.",
++                                Cat(
++                                    Cat(
++                                        std::vector<RPCResult>{
++                                            {RPCResult::Type::STR, "address", "The bitcoin address validated."},
++                                            {RPCResult::Type::STR_HEX, "scriptPubKey", "The hex-encoded output script generated by the address."},
++                                        },
++                                        InnerAddressInfoDoc()
++                                    ),
++                                    std::vector<RPCResult>{
++                                        {RPCResult::Type::BOOL, "iscompressed", /*optional=*/true, "If the pubkey is compressed."},
++                                        {RPCResult::Type::STR_HEX, "hdmasterfingerprint", /*optional=*/true, "The fingerprint of the master key."},
++                                        {RPCResult::Type::ARR, "labels", "Array of labels associated with the address. Currently limited to one label but returned\n"
++                                            "as an array to keep the API stable if multiple labels are enabled in the future.",
++                                        {
++                                            {RPCResult::Type::STR, "label name", "Label name (defaults to \"\")."},
++                                        }},
++                                    }
++                                )},
++                            {RPCResult::Type::BOOL, "iscompressed", /*optional=*/true, "If the pubkey is compressed."},
++                            {RPCResult::Type::NUM_TIME, "timestamp", /*optional=*/true, "The creation time of the key, if available, expressed in " + UNIX_EPOCH_TIME + "."},
++                            {RPCResult::Type::STR, "hdkeypath", /*optional=*/true, "The HD keypath, if the key is HD and available."},
++                            {RPCResult::Type::STR_HEX, "hdseedid", /*optional=*/true, "The Hash160 of the HD seed."},
++                            {RPCResult::Type::STR_HEX, "hdmasterfingerprint", /*optional=*/true, "The fingerprint of the master key."},
++                            {RPCResult::Type::ARR, "labels", "Array of labels associated with the address. Currently limited to one label but returned\n"
++                                "as an array to keep the API stable if multiple labels are enabled in the future.",
++                            {
++                                {RPCResult::Type::STR, "label name", "Label name (defaults to \"\")."},
++                            }},
++                        }
++                    )
+                 },
+                 RPCExamples{
+                     HelpExampleCli("getaddressinfo", "\"" + EXAMPLE_ADDRESS[0] + "\"") +
+diff --git a/src/wallet/rpc/transactions.cpp b/src/wallet/rpc/transactions.cpp
+index 34ebdea79c..b5f1a4a108 100644
+--- a/src/wallet/rpc/transactions.cpp
++++ b/src/wallet/rpc/transactions.cpp
+@@ -521,6 +521,33 @@ RPCHelpMan listtransactions()
+     };
+ }
+
++static std::vector<RPCResult> ListSinceBlockTxFields()
++{
++    return Cat<std::vector<RPCResult>>(
++        {
++            {RPCResult::Type::STR, "address", /*optional=*/true, "The bitcoin address of the transaction (not returned if the output does not have an address, e.g. OP_RETURN null data)."},
++            {RPCResult::Type::STR, "category", "The transaction category.\n"
++                "\"send\"                  Transactions sent.\n"
++                "\"receive\"               Non-coinbase transactions received.\n"
++                "\"generate\"              Coinbase transactions received with more than 100 confirmations.\n"
++                "\"immature\"              Coinbase transactions received with 100 or fewer confirmations.\n"
++                "\"orphan\"                Orphaned coinbase transactions received."},
++            {RPCResult::Type::STR_AMOUNT, "amount", "The amount in " + CURRENCY_UNIT + ". This is negative for the 'send' category, and is positive\n"
++                "for all other categories"},
++            {RPCResult::Type::NUM, "vout", "the vout value"},
++            {RPCResult::Type::STR_AMOUNT, "fee", /*optional=*/true, "The amount of the fee in " + CURRENCY_UNIT + ". This is negative and only available for the\n"
++                 "'send' category of transactions."},
++        },
++        Cat(
++            TransactionDescriptionString(),
++            std::vector<RPCResult>{
++                {RPCResult::Type::BOOL, "abandoned", "'true' if the transaction has been abandoned (inputs are respendable)."},
++                {RPCResult::Type::STR, "label", /*optional=*/true, "A comment for the address/transaction, if any"},
++            }
++        )
++    );
++}
++
+ RPCHelpMan listsinceblock()
+ {
+     return RPCHelpMan{
+@@ -542,30 +569,14 @@ RPCHelpMan listsinceblock()
+                     {
+                         {RPCResult::Type::ARR, "transactions", "",
+                         {
+-                            {RPCResult::Type::OBJ, "", "", Cat(Cat<std::vector<RPCResult>>(
+-                            {
+-                                {RPCResult::Type::STR, "address",  /*optional=*/true, "The bitcoin address of the transaction (not returned if the output does not have an address, e.g. OP_RETURN null data)."},
+-                                {RPCResult::Type::STR, "category", "The transaction category.\n"
+-                                    "\"send\"                  Transactions sent.\n"
+-                                    "\"receive\"               Non-coinbase transactions received.\n"
+-                                    "\"generate\"              Coinbase transactions received with more than 100 confirmations.\n"
+-                                    "\"immature\"              Coinbase transactions received with 100 or fewer confirmations.\n"
+-                                    "\"orphan\"                Orphaned coinbase transactions received."},
+-                                {RPCResult::Type::STR_AMOUNT, "amount", "The amount in " + CURRENCY_UNIT + ". This is negative for the 'send' category, and is positive\n"
+-                                    "for all other categories"},
+-                                {RPCResult::Type::NUM, "vout", "the vout value"},
+-                                {RPCResult::Type::STR_AMOUNT, "fee", /*optional=*/true, "The amount of the fee in " + CURRENCY_UNIT + ". This is negative and only available for the\n"
+-                                     "'send' category of transactions."},
+-                            },
+-                            TransactionDescriptionString()),
+-                            {
+-                                {RPCResult::Type::BOOL, "abandoned", "'true' if the transaction has been abandoned (inputs are respendable)."},
+-                                {RPCResult::Type::STR, "label", /*optional=*/true, "A comment for the address/transaction, if any"},
+-                            })},
++                            {RPCResult::Type::OBJ, "", "", ListSinceBlockTxFields()},
+                         }},
+                         {RPCResult::Type::ARR, "removed", /*optional=*/true, "<structure is the same as \"transactions\" above, only present if include_removed=true>\n"
+                             "Note: transactions that were re-added in the active chain will appear as-is in this array, and may thus have a positive confirmation count."
+-                        , {{RPCResult::Type::ELISION, "", ""},}},
++                        ,
++                        {
++                            {RPCResult::Type::OBJ, "", "", ListSinceBlockTxFields()},
++                        }},
+                         {RPCResult::Type::STR_HEX, "lastblock", "The hash of the block (target_confirmations-1) from the best block on the main chain, or the genesis hash if the referenced block does not exist yet. This is typically used to feed back into listsinceblock the next time you call it. So you would generally use a target_confirmations of say 6, so you will be continually re-notified of transactions until they've reached 6 confirmations plus any new ones"},
+                     }
+                 },
+@@ -705,7 +716,7 @@ RPCHelpMan gettransaction()
+                         {RPCResult::Type::STR_HEX, "hex", "Raw data for transaction"},
+                         {RPCResult::Type::OBJ, "decoded", /*optional=*/true, "The decoded transaction (only present when `verbose` is passed)",
+                         {
+-                            DecodeTxDoc(/*txid_field_doc=*/"The transaction id", /*wallet=*/true),
++                            TxDoc("The transaction id", TxDocOptions{.wallet = true}),
+                         }},
+                         RESULT_LAST_PROCESSED_BLOCK,
+                     })
