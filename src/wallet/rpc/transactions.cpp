@@ -572,8 +572,7 @@ RPCHelpMan listsinceblock()
                             {RPCResult::Type::OBJ, "", "", ListSinceBlockTxFields()},
                         }},
                         {RPCResult::Type::ARR, "removed", /*optional=*/true, "<structure is the same as \"transactions\" above, only present if include_removed=true>\n"
-                            "Note: transactions that were re-added in the active chain will appear as-is in this array, and may thus have a positive confirmation count."
-                        ,
+                            "Note: transactions that were re-added in the active chain will appear as-is in this array, and may thus have a positive confirmation count.",
                         {
                             {RPCResult::Type::OBJ, "", "", ListSinceBlockTxFields()},
                         }},
