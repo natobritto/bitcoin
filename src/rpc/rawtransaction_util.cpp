@@ -344,9 +344,43 @@ void SignTransactionResultToJSON(CMutableTransaction& mtx, bool complete, const 
     }
 }
 
-std::vector<RPCResult> DecodeTxDoc(const std::string& txid_field_doc, bool wallet)
+std::vector<RPCResult> TxDoc(const std::string& txid_field_doc, TxDocOptions opts)
 {
-    return {
+    std::vector<RPCResult> vin_item{
+        {RPCResult::Type::STR_HEX, "coinbase", /*optional=*/true, "The coinbase value (only if coinbase transaction)"},
+        {RPCResult::Type::STR_HEX, "txid", /*optional=*/true, "The transaction id (if not coinbase transaction)"},
+        {RPCResult::Type::NUM, "vout", /*optional=*/true, "The output number (if not coinbase transaction)"},
+        {RPCResult::Type::OBJ, "scriptSig", /*optional=*/true, "The script (if not coinbase transaction)",
+        {
+            {RPCResult::Type::STR, "asm", "Disassembly of the signature script"},
+            {RPCResult::Type::STR_HEX, "hex", "The raw signature script bytes, hex-encoded"},
+        }},
+        {RPCResult::Type::ARR, "txinwitness", /*optional=*/true, "",
+        {
+            {RPCResult::Type::STR_HEX, "hex", "hex-encoded witness data (if any)"},
+        }}
+    };
+    if (opts.prevout) {
+        vin_item.push_back({RPCResult::Type::OBJ, "prevout", /*optional=*/true, "The previous output, omitted if block undo data is not available",
+            {
+                {RPCResult::Type::BOOL, "generated", "Coinbase or not"},
+                {RPCResult::Type::NUM, "height", "The height of the prevout"},
+                {RPCResult::Type::STR_AMOUNT, "value", "The value in " + CURRENCY_UNIT},
+                {RPCResult::Type::OBJ, "scriptPubKey", "", ScriptPubKeyDoc()},
+            }});
+    }
+    vin_item.emplace_back(RPCResult::Type::NUM, "sequence", "The script sequence number");
+
+    std::vector<RPCResult> vout_item = std::vector<RPCResult>{
+        {RPCResult::Type::STR_AMOUNT, "value", "The value in " + CURRENCY_UNIT},
+        {RPCResult::Type::NUM, "n", "index"},
+        {RPCResult::Type::OBJ, "scriptPubKey", "", ScriptPubKeyDoc()}
+    };
+    if (opts.wallet) {
+        vout_item.emplace_back(RPCResult::Type::BOOL, "ischange", /*optional=*/true, "Output script is change (only present if true)");
+    }
+
+    std::vector<RPCResult> tx{
         {RPCResult::Type::STR_HEX, "txid", txid_field_doc},
         {RPCResult::Type::STR_HEX, "hash", "The transaction hash (differs from txid for witness transactions)"},
         {RPCResult::Type::NUM, "size", "The serialized transaction size"},
@@ -356,36 +390,21 @@ std::vector<RPCResult> DecodeTxDoc(const std::string& txid_field_doc, bool walle
         {RPCResult::Type::NUM_TIME, "locktime", "The lock time"},
         {RPCResult::Type::ARR, "vin", "",
         {
-            {RPCResult::Type::OBJ, "", "",
-            {
-                {RPCResult::Type::STR_HEX, "coinbase", /*optional=*/true, "The coinbase value (only if coinbase transaction)"},
-                {RPCResult::Type::STR_HEX, "txid", /*optional=*/true, "The transaction id (if not coinbase transaction)"},
-                {RPCResult::Type::NUM, "vout", /*optional=*/true, "The output number (if not coinbase transaction)"},
-                {RPCResult::Type::OBJ, "scriptSig", /*optional=*/true, "The script (if not coinbase transaction)",
-                {
-                    {RPCResult::Type::STR, "asm", "Disassembly of the signature script"},
-                    {RPCResult::Type::STR_HEX, "hex", "The raw signature script bytes, hex-encoded"},
-                }},
-                {RPCResult::Type::ARR, "txinwitness", /*optional=*/true, "",
-                {
-                    {RPCResult::Type::STR_HEX, "hex", "hex-encoded witness data (if any)"},
-                }},
-                {RPCResult::Type::NUM, "sequence", "The script sequence number"},
-            }},
+            {RPCResult::Type::OBJ, "", "", vin_item},
         }},
         {RPCResult::Type::ARR, "vout", "",
         {
-            {RPCResult::Type::OBJ, "", "", Cat(
-                {
-                    {RPCResult::Type::STR_AMOUNT, "value", "The value in " + CURRENCY_UNIT},
-                    {RPCResult::Type::NUM, "n", "index"},
-                    {RPCResult::Type::OBJ, "scriptPubKey", "", ScriptPubKeyDoc()},
-                },
-                    wallet ?
-                    std::vector<RPCResult>{{RPCResult::Type::BOOL, "ischange", /*optional=*/true, "Output script is change (only present if true)"}} :
-                    std::vector<RPCResult>{}
-                )
-            },
-        }},
+            {RPCResult::Type::OBJ, "", "", vout_item},
+        }}
     };
+
+    if (opts.fee) {
+        tx.emplace_back(RPCResult::Type::NUM, "fee", opts.fee_optional, "transaction fee in " + CURRENCY_UNIT + ", omitted if block undo data is not available");
+    }
+
+    if (opts.hex) {
+        tx.emplace_back(RPCResult::Type::STR_HEX, "hex", "The hex-encoded transaction data");
+    }
+
+    return tx;
 }
