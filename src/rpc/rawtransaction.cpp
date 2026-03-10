@@ -420,10 +420,7 @@ static RPCHelpMan decoderawtransaction()
                         "(e.g. fully valid, or on-chain transactions), if known by the caller."
                     },
                 },
-                RPCResult{
-                    RPCResult::Type::OBJ, "", "",
-                    TxDoc(),
-                },
+                RPCResult{RPCResult::Type::OBJ, "", "", TxDoc()},
                 RPCExamples{
                     HelpExampleCli("decoderawtransaction", "\"hexstring\"")
             + HelpExampleRpc("decoderawtransaction", "\"hexstring\"")
