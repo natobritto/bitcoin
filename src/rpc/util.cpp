@@ -1015,9 +1015,17 @@ void RPCResult::ToSections(Sections& sections, const OuterType outer_type, const
                (this->m_description.empty() ? "" : " " + this->m_description);
     };
 
+    if (m_opts.print_elision) {
+        // If the inner result is empty, use three dots for elision
+        if (!m_opts.print_elision->empty()) {
+            sections.PushSection({indent + "..." + maybe_separator, *m_opts.print_elision});
+        }
+        return;
+    }
+
     switch (m_type) {
     case Type::ELISION: {
-        // If the inner result is empty, use three dots for elision
+        // Deprecated alias of m_opts.print_elision
         sections.PushSection({indent + "..." + maybe_separator, m_description});
         return;
     }
